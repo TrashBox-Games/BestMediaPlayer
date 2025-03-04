@@ -16,7 +16,8 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mediaplayer"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,7 +30,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-document-picker"
+      "expo-document-picker",
+      "expo-asset"
     ],
     "extra": {
       "eas": {
