@@ -25,10 +25,12 @@
     "@tamagui/theme-base": "^1.125.20",
     "@tamagui/toast": "^1.125.20",
     "buffer": "^6.0.3",
+    "events": "^3.3.0",
     "expo": "~52.0.37",
     "expo-av": "^15.0.2",
     "expo-document-picker": "~13.0.3",
     "expo-file-system": "~18.0.11",
+    "expo-media-library": "~17.0.6",
     "expo-network": "~7.0.5",
     "expo-status-bar": "~2.0.1",
     "expo-system-ui": "~4.0.8",
@@ -41,7 +43,7 @@
     "react-native-tab-view": "^3.5.2",
     "react-native-tcp-socket": "^6.0.6",
     "tamagui": "^1.125.20",
-    "expo-media-library": "~17.0.6"
+    "expo-asset": "~11.0.4"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
