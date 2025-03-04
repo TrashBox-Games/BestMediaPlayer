@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Best Media Player</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px 0;
+            text-align: center;
+        }
+        h1 {
+            margin: 0;
+        }
+        .content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .feature {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        footer {
+            margin-top: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+        .upload-form {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .file-input {
+            margin-bottom: 15px;
+            width: 100%;
+        }
+        .submit-btn {
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .submit-btn:hover {
+            background-color: #1a2530;
+        }
+        .upload-list {
+            margin-top: 20px;
+        }
+        .upload-item {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .progress-container {
+            width: 100%;
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #4CAF50;
+            border-radius: 10px;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .file-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Best Media Player</h1>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="content">
+            <h2>Welcome to Best Media Player</h2>
+            <p>A powerful and versatile media player for all your audio and video needs.</p>
+            
+            <div class="features">
+                <div class="feature">
+                    <h3>Audio Playback</h3>
+                    <p>Support for multiple audio formats with high-quality playback.</p>
+                </div>
+                <div class="feature">
+                    <h3>Video Streaming</h3>
+                    <p>Stream your favorite videos with smooth playback and controls.</p>
+                </div>
+                <div class="feature">
+                    <h3>Playlist Management</h3>
+                    <p>Create and manage playlists for your media collection.</p>
+                </div>
+            </div>
+            
+            <div class="upload-form">
+                <h3>Upload Media Files</h3>
+                <p>Select audio or video files to upload to your media library.</p>
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <input type="file" id="fileInput" class="file-input" accept="audio/*,video/*" multiple>
+                    <button type="button" id="uploadButton" class="submit-btn">Upload Files</button>
+                </form>
+                <div id="uploadList" class="upload-list"></div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>&copy; 2023 Best Media Player. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('fileInput');
+            const uploadButton = document.getElementById('uploadButton');
+            const uploadList = document.getElementById('uploadList');
+            const uploadForm = document.getElementById('uploadForm');
+            
+            // Prevent form submission which would cause page refresh
+            uploadForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+            });
+            
+            uploadButton.addEventListener('click', function(e) {
+                // Prevent any default action that might cause page refresh
+                e.preventDefault();
+                
+                const files = fileInput.files;
+                
+                if (files.length === 0) {
+                    alert('Please select at least one audio or video file.');
+                    return;
+                }
+                
+                // Clear previous uploads
+                uploadList.innerHTML = '';
+                
+                // Process each file
+                Array.from(files).forEach(file => {
+                    // Create upload item element
+                    const uploadItem = document.createElement('div');
+                    uploadItem.className = 'upload-item';
+                    
+                    const fileName = document.createElement('div');
+                    fileName.className = 'file-name';
+                    fileName.textContent = file.name;
+                    
+                    const progressContainer = document.createElement('div');
+                    progressContainer.className = 'progress-container';
+                    
+                    const progressBar = document.createElement('div');
+                    progressBar.className = 'progress-bar';
+                    
+                    progressContainer.appendChild(progressBar);
+                    uploadItem.appendChild(fileName);
+                    uploadItem.appendChild(progressContainer);
+                    uploadList.appendChild(uploadItem);
+                    
+                    // Upload the file
+                    uploadFile(file, progressBar);
+                });
+            });
+            
+            function uploadFile(file, progressBar) {
+                const xhr = new XMLHttpRequest();
+                const formData = new FormData();
+                
+                formData.append('file', file);
+                
+                xhr.open('POST', '/upload', true);
+                
+                xhr.upload.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        const percentComplete = (e.loaded / e.total) * 100;
+                        progressBar.style.width = percentComplete + '%';
+                    }
+                };
+                
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        progressBar.style.backgroundColor = '#4CAF50'; // Green for success
+                    } else {
+                        progressBar.style.backgroundColor = '#f44336'; // Red for error
+                    }
+                };
+                
+                xhr.onerror = function() {
+                    progressBar.style.backgroundColor = '#f44336'; // Red for error
+                };
+                
+                xhr.send(formData);
+            }
+        });
+    </script>
+</body>
+</html>
