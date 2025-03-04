@@ -22,6 +22,7 @@ type TabParamList = {
   Video: undefined;
   "File Transfer": undefined;
   "Http Server": undefined;
+  "Http Server 2": undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -74,6 +75,7 @@ export default function App() {
                 headerTintColor: themeMode === "dark" ? "#FFFFFF" : "#000000",
               })}
             >
+              <Tab.Screen name="Http Server" component={HttpServerScreen} />
               <Tab.Screen name="Playlists" component={PlaylistsScreen} />
               <Tab.Screen name="Audio" component={AudioScreen} />
               <Tab.Screen name="Video" component={VideoScreen} />
@@ -84,7 +86,6 @@ export default function App() {
                   tabBarLabel: "Settings",
                 }}
               />
-              <Tab.Screen name="Http Server" component={HttpServerScreen} />
             </Tab.Navigator>
           </NavigationContainer>
         </View>
