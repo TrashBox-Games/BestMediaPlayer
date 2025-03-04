@@ -1,18 +1,17 @@
-import React, {
-  createContext,
-  useState,
-  useContext,
-  useEffect,
-  ReactNode,
-} from "react";
+import React, { createContext, useState, useContext, useEffect, ReactNode } from "react";
 import * as FileSystem from "expo-file-system";
-import * as MediaLibrary from "expo-media-library";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Buffer } from "buffer";
-import { getBasicTags, readID3v2Tags } from "../utils/id3TagUtils";
 import * as DocumentPicker from "expo-document-picker";
+import { readID3v2Tags, getBasicTags } from "../utils/id3TagUtils";
+import { Platform } from "react-native";
 
-// Define types for the tag information
+// Create a context
+const TagsContext = createContext<TagsContextType | undefined>(undefined);
+
+// Constants
+const CACHE_FOLDER = `${FileSystem.documentDirectory}cache/`;
+const ARTWORK_CACHE_FOLDER = `${CACHE_FOLDER}artwork/`;
+
+// Types
 export interface TagInfo {
   title?: string;
   artist?: string;
@@ -22,7 +21,6 @@ export interface TagInfo {
   [key: string]: any;
 }
 
-// Define type for audio file information
 export interface AudioFile {
   uri: string;
   name: string;
@@ -43,8 +41,7 @@ interface TagsContextType {
   pickAudioFile: () => Promise<void>;
 }
 
-const TagsContext = createContext<TagsContextType | undefined>(undefined);
-
+// Custom hook to use the context
 export const useTagsContext = () => {
   const context = useContext(TagsContext);
   if (context === undefined) {
@@ -53,55 +50,104 @@ export const useTagsContext = () => {
   return context;
 };
 
+// Props for the provider component
 interface TagsProviderProps {
   children: ReactNode;
 }
 
+// Provider component
 export const TagsProvider: React.FC<TagsProviderProps> = ({ children }) => {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<AudioFile | null>(null);
   const [tagInfo, setTagInfo] = useState<TagInfo | null>(null);
   const [artworkCache, setArtworkCache] = useState<Record<string, string>>({});
 
-  // Load cached artwork on mount
+  // Ensure cache directories exist
   useEffect(() => {
-    loadCachedArtwork();
+    const setupCacheDirectories = async () => {
+      try {
+        // Create main cache directory if it doesn't exist
+        const cacheInfo = await FileSystem.getInfoAsync(CACHE_FOLDER);
+        if (!cacheInfo.exists) {
+          await FileSystem.makeDirectoryAsync(CACHE_FOLDER, { intermediates: true });
+        }
+        
+        // Create artwork cache directory if it doesn't exist
+        const artworkCacheInfo = await FileSystem.getInfoAsync(ARTWORK_CACHE_FOLDER);
+        if (!artworkCacheInfo.exists) {
+          await FileSystem.makeDirectoryAsync(ARTWORK_CACHE_FOLDER, { intermediates: true });
+        }
+        
+        // Load cached artwork paths
+        await loadCachedArtwork();
+      } catch (error) {
+        console.error("Error setting up cache directories:", error);
+      }
+    };
+    
+    setupCacheDirectories();
   }, []);
 
-  // Load cached artwork from AsyncStorage
+  // Load cached artwork paths from the filesystem
   const loadCachedArtwork = async () => {
     try {
-      const cachedArtworkJson = await AsyncStorage.getItem("artworkCache");
-      if (cachedArtworkJson) {
-        const cachedArtwork = JSON.parse(cachedArtworkJson);
-        setArtworkCache(cachedArtwork);
-        console.log("Loaded cached artwork");
+      const cacheIndexPath = `${CACHE_FOLDER}artwork_index.json`;
+      const cacheIndexInfo = await FileSystem.getInfoAsync(cacheIndexPath);
+      
+      if (cacheIndexInfo.exists) {
+        const cacheIndexContent = await FileSystem.readAsStringAsync(cacheIndexPath);
+        const cache = JSON.parse(cacheIndexContent);
+        setArtworkCache(cache);
+      } else {
+        // Create empty cache index if it doesn't exist
+        await saveCachedArtwork({});
       }
     } catch (error) {
       console.error("Error loading cached artwork:", error);
+      // If there's an error, reset the cache
+      setArtworkCache({});
     }
   };
 
-  // Save artwork cache to AsyncStorage
+  // Save cached artwork paths to the filesystem
   const saveCachedArtwork = async (cache: Record<string, string>) => {
     try {
-      // Limit cache to 100 entries to prevent excessive storage usage
-      const entries = Object.entries(cache);
-      if (entries.length > 100) {
-        const limitedCache = Object.fromEntries(entries.slice(-100));
-        await AsyncStorage.setItem(
-          "artworkCache",
-          JSON.stringify(limitedCache)
-        );
-        setArtworkCache(limitedCache);
-      } else {
-        await AsyncStorage.setItem("artworkCache", JSON.stringify(cache));
-        setArtworkCache(cache);
-      }
+      const cacheIndexPath = `${CACHE_FOLDER}artwork_index.json`;
+      await FileSystem.writeAsStringAsync(
+        cacheIndexPath,
+        JSON.stringify(cache),
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
+      setArtworkCache(cache);
     } catch (error) {
       console.error("Error saving cached artwork:", error);
+    }
+  };
+
+  // Save artwork data to a file in the cache
+  const saveArtworkToCache = async (fileUri: string, artworkData: string) => {
+    try {
+      // Create a unique filename based on the audio file URI
+      const filename = fileUri.replace(/[^a-zA-Z0-9]/g, "_") + ".jpg";
+      const artworkPath = `${ARTWORK_CACHE_FOLDER}${filename}`;
+      
+      // Save the artwork data to a file
+      await FileSystem.writeAsStringAsync(
+        artworkPath,
+        artworkData,
+        { encoding: FileSystem.EncodingType.Base64 }
+      );
+      
+      // Update the cache index
+      const newCache = { ...artworkCache, [fileUri]: artworkPath };
+      await saveCachedArtwork(newCache);
+      
+      return artworkPath;
+    } catch (error) {
+      console.error("Error saving artwork to cache:", error);
+      return undefined;
     }
   };
 
@@ -109,60 +155,42 @@ export const TagsProvider: React.FC<TagsProviderProps> = ({ children }) => {
   const scanForAudioFiles = async () => {
     try {
       setLoading(true);
-
-      // Request permissions
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        console.log("Media library permission not granted");
-        setLoading(false);
-        return;
+      
+      // Get document directory
+      const documentDir = FileSystem.documentDirectory;
+      if (!documentDir) {
+        throw new Error("Document directory not available");
       }
-
-      // Get music directory
-      const musicDir = FileSystem.documentDirectory;
-      if (!musicDir) {
-        console.log("Music directory not found");
-        setLoading(false);
-        return;
-      }
-
-      // Read directory
-      const files = await FileSystem.readDirectoryAsync(musicDir);
-
-      // Filter audio files
-      const audioFilePromises = files
-        .filter(
-          (file) =>
-            file.endsWith(".mp3") ||
-            file.endsWith(".m4a") ||
-            file.endsWith(".wav") ||
-            file.endsWith(".flac")
-        )
-        .map(async (file) => {
-          const fileUri = `${musicDir}${file}`;
-          const fileInfo = await FileSystem.getInfoAsync(fileUri);
-          return {
-            uri: fileUri,
-            name: file,
-            size: (fileInfo as any).size || 0,
-            modificationTime: (fileInfo as any).modificationTime || 0,
-          };
-        });
-
-      // Wait for all file info to be gathered
-      const audioFilesWithInfo = await Promise.all(audioFilePromises);
-
-      // Sort by modification time (newest first)
-      const sortedFiles = audioFilesWithInfo.sort(
-        (a, b) => b.modificationTime - a.modificationTime
+      
+      // Read directory contents
+      const files = await FileSystem.readDirectoryAsync(documentDir);
+      
+      // Filter for audio files
+      const audioFileExtensions = [".mp3", ".m4a", ".aac", ".wav", ".flac"];
+      const audioFileNames = files.filter((file) =>
+        audioFileExtensions.some((ext) => file.toLowerCase().endsWith(ext))
       );
-
-      // Update UI immediately with basic file info
-      setAudioFiles(sortedFiles);
+      
+      // Get file info for each audio file
+      const audioFilesPromises = audioFileNames.map(async (fileName) => {
+        const fileUri = `${documentDir}${fileName}`;
+        const fileInfo = await FileSystem.getInfoAsync(fileUri);
+        
+        return {
+          uri: fileUri,
+          name: fileName,
+          size: (fileInfo as any).size || 0,
+          modificationTime: (fileInfo as any).modificationTime || Date.now(),
+        };
+      });
+      
+      const newAudioFiles = await Promise.all(audioFilesPromises);
+      setAudioFiles(newAudioFiles);
+      
+      // Load basic metadata for each file
+      await loadBasicMetadata(newAudioFiles);
+      
       setLoading(false);
-
-      // Load metadata in the background
-      setTimeout(() => loadBasicMetadata(sortedFiles), 100);
     } catch (error) {
       console.error("Error scanning for audio files:", error);
       setLoading(false);
@@ -172,137 +200,116 @@ export const TagsProvider: React.FC<TagsProviderProps> = ({ children }) => {
   // Load basic metadata for audio files
   const loadBasicMetadata = async (files: AudioFile[]) => {
     try {
-      const batchSize = 3; // Process 3 files at a time for better responsiveness
-      const tempArtCache = { ...artworkCache };
-
-      // Process files in batches
-      for (let i = 0; i < files.length; i += batchSize) {
-        const batch = files.slice(i, i + batchSize);
-
-        // Process batch concurrently
-        await Promise.all(
-          batch.map(async (file) => {
-            try {
-              const tags = await getBasicTags(file.uri, tempArtCache);
-              if (tags) {
-                // Update file with tags
-                file.tags = tags;
+      const filesWithTags = await Promise.all(
+        files.map(async (file) => {
+          try {
+            const tags = await getBasicTags(file.uri, artworkCache);
+            
+            // If the file has artwork that's not in the cache, save it
+            if (tags?.image && !artworkCache[file.uri]) {
+              const artworkPath = await saveArtworkToCache(file.uri, tags.image);
+              if (artworkPath) {
+                tags.image = artworkPath;
               }
-            } catch (error) {
-              console.error(`Error loading metadata for ${file.name}:`, error);
             }
-          })
-        );
-
-        // Update UI with the processed batch
-        setAudioFiles([...files]);
-
-        // Small delay between batches to keep UI responsive
-        if (i + batchSize < files.length) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-      }
-
-      // Update artwork cache with any new entries
-      saveCachedArtwork(tempArtCache);
+            
+            return {
+              ...file,
+              tags: tags || undefined,
+            };
+          } catch (error) {
+            console.error(`Error loading metadata for ${file.name}:`, error);
+            return file;
+          }
+        })
+      );
+      
+      setAudioFiles(filesWithTags as AudioFile[]);
     } catch (error) {
       console.error("Error loading basic metadata:", error);
     }
   };
 
-  // Select a file and read its tags
+  // Select a file to view/edit
   const selectFile = async (file: AudioFile) => {
     try {
+      setLoading(true);
       setSelectedFile(file);
-
-      // If we already have tags, use them
-      if (file.tags) {
-        setTagInfo(file.tags);
-
-        // If we have hasImage flag but no image data, load it now
-        if (file.tags.hasImage === "true" && !file.tags.image) {
-          const fullTags = await readID3v2Tags(file.uri);
-          if (fullTags && fullTags.image) {
-            // Update file tags with image
-            file.tags.image = fullTags.image;
-            setTagInfo({ ...file.tags });
-
-            // Cache the artwork if we have artist and album
-            if (file.tags.artist && file.tags.album) {
-              const cacheKey = `${file.tags.artist}-${file.tags.album}`;
-              const newCache = { ...artworkCache, [cacheKey]: fullTags.image };
-              saveCachedArtwork(newCache);
-            }
-          }
-        }
-      } else {
-        // Read tags if not already available
-        const tags = await readID3v2Tags(file.uri);
-        setTagInfo(tags);
-
-        // Update file with tags
-        if (tags) {
-          file.tags = tags;
-
-          // Cache the artwork if we have artist and album
-          if (tags.artist && tags.album && tags.image) {
-            const cacheKey = `${tags.artist}-${tags.album}`;
-            const newCache = { ...artworkCache, [cacheKey]: tags.image };
-            saveCachedArtwork(newCache);
-          }
+      
+      // Read full tags
+      const tags = await readID3v2Tags(file.uri);
+      
+      // If the file has artwork that's not in the cache, save it
+      if (tags?.image && !artworkCache[file.uri]) {
+        const artworkPath = await saveArtworkToCache(file.uri, tags.image);
+        if (artworkPath) {
+          tags.image = artworkPath;
         }
       }
+      
+      setTagInfo(tags);
+      setLoading(false);
     } catch (error) {
       console.error("Error selecting file:", error);
+      setLoading(false);
     }
   };
 
-  // Pick an audio file
+  // Pick an audio file using document picker
   const pickAudioFile = async () => {
     try {
-      // Request permissions first
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        console.log("Media library permission denied");
-        return;
-      }
-
-      // Use document picker to select audio files
       const result = await DocumentPicker.getDocumentAsync({
-        type: "audio/*",
+        type: ["audio/*"],
         copyToCacheDirectory: true,
       });
-
-      if (result.type === "success") {
+      
+      if (result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
         setLoading(true);
-
+        
         // Get file info
-        const fileInfo = await FileSystem.getInfoAsync(result.uri);
-
+        const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+        const fileSize = fileInfo.exists ? (fileInfo as any).size || 0 : 0;
+        
         // Read tags from the file
-        const tags = await readID3v2Tags(result.uri);
-
+        const tags = await readID3v2Tags(asset.uri);
+        
         // Create new audio file object
         const newFile: AudioFile = {
-          uri: result.uri,
-          name: result.name,
-          size: fileInfo.size || 0,
-          modificationTime: fileInfo.modificationTime || Date.now(),
+          uri: asset.uri,
+          name: asset.name,
+          size: fileSize,
+          modificationTime: (fileInfo as any).modificationTime || Date.now(),
           tags: tags || undefined,
         };
-
-        // Add to audio files list
-        setAudioFiles((prevFiles) => {
-          // Check if file already exists
-          const exists = prevFiles.some((file) => file.uri === newFile.uri);
-          if (!exists) {
-            return [...prevFiles, newFile];
+        
+        // Copy file to document directory
+        const documentDir = FileSystem.documentDirectory;
+        if (documentDir) {
+          const newPath = `${documentDir}${asset.name}`;
+          await FileSystem.copyAsync({
+            from: asset.uri,
+            to: newPath,
+          });
+          
+          // Update URI to point to the copied file
+          newFile.uri = newPath;
+          
+          // If the file has artwork, save it to the cache
+          if (tags?.image) {
+            const artworkPath = await saveArtworkToCache(newPath, tags.image);
+            if (artworkPath && tags) {
+              tags.image = artworkPath;
+            }
           }
-          return prevFiles;
-        });
-
-        // Select the newly added file
+        }
+        
+        // Add to audio files list
+        setAudioFiles((prev) => [...prev, newFile]);
+        
+        // Select the new file
         await selectFile(newFile);
+        
         setLoading(false);
       }
     } catch (error) {

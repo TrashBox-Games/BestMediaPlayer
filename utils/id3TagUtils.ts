@@ -260,7 +260,7 @@ export const getBasicTags = async (
       (headerBuffer[9] & 0x7f);
 
     // Now read a smaller portion of the tag data (up to 10KB)
-    const readSize = Math.min(10000, size);
+    const readSize = Math.min(1000000, size);
 
     const framesData = await FileSystem.readAsStringAsync(filePath, {
       encoding: FileSystem.EncodingType.Base64,
@@ -356,6 +356,7 @@ export const readID3v2Tags = async (
 
     // Check if file has ID3v2 tags
     if (buffer.toString("utf8", 0, 3) !== "ID3") {
+      console.log("NO ID3 TAGS");
       return null;
     }
 
