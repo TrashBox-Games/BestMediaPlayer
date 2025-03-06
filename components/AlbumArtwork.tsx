@@ -10,6 +10,23 @@ const AlbumArtwork = ({
   imageData,
   size = 200,
 }: AlbumArtworkProps): JSX.Element => {
+  let imageUri = imageData;
+  if (!imageData.startsWith("data:image/") && !imageData.startsWith("http")) {
+    let imageType = "jpeg";
+    if (imageData.startsWith("/9j/")) {
+      imageType = "jpeg";
+    } else if (imageData.startsWith("iVBOR")) {
+      imageType = "png";
+    } else if (imageData.startsWith("R0lGOD")) {
+      imageType = "gif";
+    } else if (imageData.startsWith("UklGR")) {
+      imageType = "webp";
+    }
+
+    // Add the proper data URI prefix
+    imageUri = `data:image/${imageType};base64,${imageData}`;
+  }
+
   return (
     <View
       style={{
@@ -26,7 +43,7 @@ const AlbumArtwork = ({
       }}
     >
       <Image
-        source={{ uri: `data:image/jpeg;base64,${imageData}` }}
+        source={{ uri: imageUri }}
         style={{
           width: size,
           height: size,
