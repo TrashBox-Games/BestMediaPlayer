@@ -10,6 +10,7 @@ import VideoScreen from "./screens/VideoScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AudioScreen from "./screens/AudioScreen";
 import HttpServerScreen from "./screens/HttpServerScreen";
+import TestScreen from "./screens/TestScreen";
 // Import context provider
 import { TagsProvider } from "./contexts/TagsContext";
 import { PlayerProvider } from "./contexts/PlayerContext";
@@ -22,7 +23,7 @@ type TabParamList = {
   Video: undefined;
   "File Transfer": undefined;
   "Http Server": undefined;
-  "Http Server 2": undefined;
+  "ID3 Test": undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -56,6 +57,10 @@ export default function App() {
                     iconName = focused ? "settings" : "settings-outline";
                   } else if (route.name === "Http Server") {
                     iconName = focused ? "server" : "server-outline";
+                  } else if (route.name === "ID3 Test") {
+                    iconName = focused
+                      ? "musical-note"
+                      : "musical-note-outline";
                   }
                   // Return the Ionicons component
                   return <Ionicons name={iconName} size={size} color={color} />;
@@ -79,6 +84,7 @@ export default function App() {
               <Tab.Screen name="Playlists" component={PlaylistsScreen} />
               <Tab.Screen name="Audio" component={AudioScreen} />
               <Tab.Screen name="Video" component={VideoScreen} />
+              <Tab.Screen name="ID3 Test" component={TestScreen} />
               <Tab.Screen
                 name="Settings"
                 component={SettingsScreen}
