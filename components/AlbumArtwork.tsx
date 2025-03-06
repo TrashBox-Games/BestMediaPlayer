@@ -1,15 +1,59 @@
 import React from "react";
-import { Image, View, StyleSheet } from "react-native";
+import { Image, View, StyleSheet, StyleProp, ViewStyle, ImageSourcePropType } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 interface AlbumArtworkProps {
-  imageData: string;
-  size?: number;
+  imageData: string | undefined;
+  style?: StyleProp<ViewStyle>;
+  defaultImage?: ImageSourcePropType;
 }
 
 const AlbumArtwork = ({
   imageData,
-  size = 200,
+  style,
+  defaultImage
 }: AlbumArtworkProps): JSX.Element => {
+  // If imageData is undefined, show default image or placeholder icon
+  if (!imageData) {
+    if (defaultImage) {
+      return (
+        <View style={[{
+          width: "100%",
+          height: "100%",
+          borderRadius: 4,
+          overflow: "hidden",
+        }, style]}>
+          <Image
+            source={defaultImage}
+            style={{
+              width: "100%",
+              height: "100%",
+              borderRadius: 4,
+            }}
+            resizeMode="cover"
+          />
+        </View>
+      );
+    }
+    
+    return (
+      <View
+        style={[{
+          width: "100%",
+          height: "100%",
+          borderRadius: 4,
+          overflow: "hidden",
+          backgroundColor: "#eee",
+          justifyContent: "center",
+          alignItems: "center",
+        }, style]}
+      >
+        <Ionicons name="musical-notes" size={24} color="#999" />
+      </View>
+    );
+  }
+
+  // Process image data if it exists
   let imageUri = imageData;
   if (!imageData.startsWith("data:image/") && !imageData.startsWith("http")) {
     let imageType = "jpeg";
@@ -29,26 +73,20 @@ const AlbumArtwork = ({
 
   return (
     <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 20,
+      style={[{
+        width: "100%",
+        height: "100%",
+        borderRadius: 4,
         overflow: "hidden",
         backgroundColor: "#fff",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 5,
-      }}
+      }, style]}
     >
       <Image
         source={{ uri: imageUri }}
         style={{
-          width: size,
-          height: size,
-          borderRadius: size / 20,
-          backgroundColor: "#eee",
+          width: "100%",
+          height: "100%",
+          borderRadius: 4,
         }}
         resizeMode="cover"
       />
