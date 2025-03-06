@@ -117,6 +117,7 @@ const SongsTab = () => {
 
   // Render each audio file item
   const renderItem = ({ item }: { item: AudioFile }) => {
+    console.log(item.tags?.image);
     const isSelected = currentTrack?.uri === item.uri;
 
     return (
@@ -126,10 +127,7 @@ const SongsTab = () => {
       >
         <View style={styles.fileInfo}>
           {item.tags?.image ? (
-            <Image
-              source={{ uri: `data:image/jpeg;base64,${item.tags.image}` }}
-              style={styles.albumArt}
-            />
+            <AlbumArtwork imageData={item.tags.image} />
           ) : (
             <View style={styles.placeholderArt}>
               <Ionicons name="musical-note" size={24} color="#888" />
