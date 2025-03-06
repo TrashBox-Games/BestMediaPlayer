@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import * as FileSystem from "expo-file-system";
 import * as DocumentPicker from "expo-document-picker";
-import { readID3v2Tags, getBasicTags } from "../utils/id3TagUtils";
+import { readID3v2Tags } from "../utils/readID3Tags";
 import { Platform } from "react-native";
 
 // Create a context
@@ -124,7 +124,6 @@ export const TagsProvider: React.FC<TagsProviderProps> = ({ children }) => {
       const filesWithTags = await Promise.all(
         files.map(async (file) => {
           const tags = await readID3v2Tags(file.uri);
-          console.log(tags);
           return {
             ...file,
             tags: tags || undefined,
