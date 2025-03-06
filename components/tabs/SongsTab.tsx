@@ -117,38 +117,16 @@ const SongsTab = () => {
 
   // Render each audio file item
   const renderItem = ({ item }: { item: AudioFile }) => {
-    console.log(item.tags?.image);
     const isSelected = currentTrack?.uri === item.uri;
 
     return (
-      <TouchableOpacity
-        style={[styles.fileItem, isSelected ? styles.selectedItem : null]}
-        onPress={() => handleFileSelect(item)}
-      >
-        <View style={styles.fileInfo}>
-          {item.tags?.image ? (
-            <AlbumArtwork imageData={item.tags.image} />
-          ) : (
-            <View style={styles.placeholderArt}>
-              <Ionicons name="musical-note" size={24} color="#888" />
-            </View>
-          )}
-          <View style={styles.fileDetails}>
-            <Text style={styles.fileName} numberOfLines={1}>
-              {item.tags?.title || item.name}
-            </Text>
-            <Text style={styles.fileArtist} numberOfLines={1}>
-              {item.tags?.artist || "Unknown Artist"}
-            </Text>
-            <Text style={styles.fileAlbum} numberOfLines={1}>
-              {item.tags?.album || "Unknown Album"}
-            </Text>
-          </View>
-          {isSelected && playerState.isPlaying && (
-            <Ionicons name="volume-high" size={20} color="#007AFF" />
-          )}
-        </View>
-      </TouchableOpacity>
+      <SongItem
+        item={item}
+        isSelected={isSelected}
+        isPlaying={playerState.isPlaying}
+        onSelect={handleFileSelect}
+        defaultImage={require('../../assets/default-album.png')}
+      />
     );
   };
 
@@ -254,18 +232,11 @@ const SongsTab = () => {
           </View>
 
           <View style={styles.trackInfoContainer}>
-            {currentTrack.tags?.image ? (
-              <Image
-                source={{
-                  uri: `data:image/jpeg;base64,${currentTrack.tags.image}`,
-                }}
+              <AlbumArtwork
+                imageData={currentTrack.tags?.image}
                 style={styles.playerAlbumArt}
+                defaultImage={require('../../assets/default-album.png')}
               />
-            ) : (
-              <View style={styles.playerPlaceholderArt}>
-                <Ionicons name="musical-note" size={20} color="#888" />
-              </View>
-            )}
 
             <View style={styles.trackTextContainer}>
               <Text style={styles.trackTitle} numberOfLines={1}>
