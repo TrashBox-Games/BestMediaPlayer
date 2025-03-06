@@ -1,16 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { StyleSheet, View, useColorScheme } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
+import TrackPlayer from "react-native-track-player";
 // Import screens
 import PlaylistsScreen from "./screens/PlaylistsScreen";
 import VideoScreen from "./screens/VideoScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AudioScreen from "./screens/AudioScreen";
-import HttpServerScreen from "./screens/HttpServerScreen";
-import TestScreen from "./screens/TestScreen";
+import HttpServerScreen from "./screens/developer/HttpServerScreen";
+import AddFileScreen from "./screens/AddFileScreen";
 // Import context provider
 import { TagsProvider } from "./contexts/TagsContext";
 import { PlayerProvider } from "./contexts/PlayerContext";
@@ -20,10 +21,9 @@ type TabParamList = {
   Settings: undefined;
   Playlists: undefined;
   Audio: undefined;
+  "Add Files": undefined;
   Video: undefined;
-  "File Transfer": undefined;
   "Http Server": undefined;
-  "ID3 Test": undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -55,12 +55,8 @@ export default function App() {
                     iconName = focused ? "videocam" : "videocam-outline";
                   } else if (route.name === "Settings") {
                     iconName = focused ? "settings" : "settings-outline";
-                  } else if (route.name === "Http Server") {
-                    iconName = focused ? "server" : "server-outline";
-                  } else if (route.name === "ID3 Test") {
-                    iconName = focused
-                      ? "musical-note"
-                      : "musical-note-outline";
+                  } else if (route.name === "Add Files") {
+                    iconName = focused ? "add-circle" : "add-circle-outline";
                   }
                   // Return the Ionicons component
                   return <Ionicons name={iconName} size={size} color={color} />;
@@ -80,11 +76,10 @@ export default function App() {
                 headerTintColor: themeMode === "dark" ? "#FFFFFF" : "#000000",
               })}
             >
-              <Tab.Screen name="Http Server" component={HttpServerScreen} />
               <Tab.Screen name="Playlists" component={PlaylistsScreen} />
               <Tab.Screen name="Audio" component={AudioScreen} />
+              <Tab.Screen name="Add Files" component={AddFileScreen} />
               <Tab.Screen name="Video" component={VideoScreen} />
-              <Tab.Screen name="ID3 Test" component={TestScreen} />
               <Tab.Screen
                 name="Settings"
                 component={SettingsScreen}
