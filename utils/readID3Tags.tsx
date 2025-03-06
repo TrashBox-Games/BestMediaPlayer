@@ -36,34 +36,48 @@ interface ID3Frame {
  */
 export async function readID3v2Tags(filePath: string): Promise<ID3Tags | null> {
   try {
-    // Read file as base64 using Expo FileSystem
-    const data = await FileSystem.readAsStringAsync(filePath, {
+    // First, read just the ID3 header (first 10 bytes) to check if ID3 tags exist and get the size
+    const headerData = await FileSystem.readAsStringAsync(filePath, {
       encoding: FileSystem.EncodingType.Base64,
+      length: 10, // Just read the 10-byte header first
+      position: 0,
     });
-    const buffer = Buffer.from(data, "base64");
+
+    const headerBuffer = Buffer.from(headerData, "base64");
 
     // Check if file has ID3v2 tags (first 3 bytes should be "ID3")
-    if (buffer.toString("utf8", 0, 3) !== "ID3") {
+    if (headerBuffer.slice(0, 3).toString() !== "ID3") {
       console.log("No ID3v2 tags found");
       return null;
     }
 
     // Get ID3 version
     const version = {
-      major: buffer[3],
-      revision: buffer[4],
+      major: headerBuffer[3],
+      revision: headerBuffer[4],
     };
 
     // Check for flags
-    const flags = buffer[5];
+    const flags = headerBuffer[5];
     const hasExtendedHeader = (flags & 0x40) !== 0;
 
     // Get tag size (last 4 bytes of header, synchsafe integers)
     const size =
-      ((buffer[6] & 0x7f) << 21) |
-      ((buffer[7] & 0x7f) << 14) |
-      ((buffer[8] & 0x7f) << 7) |
-      (buffer[9] & 0x7f);
+      ((headerBuffer[6] & 0x7f) << 21) |
+      ((headerBuffer[7] & 0x7f) << 14) |
+      ((headerBuffer[8] & 0x7f) << 7) |
+      (headerBuffer[9] & 0x7f);
+
+    // Now that we know the size, read only the ID3 tag portion of the file
+    // Add a small buffer (1KB) to ensure we read enough data
+    const totalTagSize = 10 + size;
+    const tagData = await FileSystem.readAsStringAsync(filePath, {
+      encoding: FileSystem.EncodingType.Base64,
+      length: totalTagSize,
+      position: 0,
+    });
+
+    const buffer = Buffer.from(tagData, "base64");
 
     // Initialize position after header
     let pos = 10;
@@ -100,7 +114,7 @@ export async function readID3v2Tags(filePath: string): Promise<ID3Tags | null> {
       }
 
       // Read frame ID (4 chars)
-      const frameId = buffer.toString("ascii", pos, pos + 4);
+      const frameId = buffer.slice(pos, pos + 4).toString("ascii");
       pos += 4;
 
       // Read frame size (4 bytes)
