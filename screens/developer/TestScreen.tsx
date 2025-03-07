@@ -9,8 +9,8 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as FileSystem from "expo-file-system";
-import { pickAudioFile, readID3v2Tags } from "../utils/readID3Tags";
-import AlbumArtwork from "../components/AlbumArtwork";
+import { pickAudioFile, readID3v2Tags } from "../../utils/readID3Tags";
+import AlbumArtwork from "../../components/AlbumArtwork";
 
 interface ID3Tags {
   title?: string;
@@ -43,24 +43,7 @@ const TestScreen: React.FC = () => {
         setFileName(result.name);
         setSelectedFile(result.uri);
 
-        // Read ID3 tags
         const id3Tags = await readID3v2Tags(result.uri);
-
-        // Debug logging for album art
-        console.log("ID3 Tags found:", id3Tags ? "Yes" : "No");
-        if (id3Tags) {
-          console.log("All tag keys:", Object.keys(id3Tags));
-          console.log("Has image tag:", id3Tags.hasOwnProperty("image"));
-          if (id3Tags.image) {
-            console.log("Image tag value length:", id3Tags.image.length);
-            console.log(
-              "Image tag value starts with:",
-              id3Tags.image.substring(0, 50) + "..."
-            );
-          } else {
-            console.log("No image tag found in ID3 tags");
-          }
-        }
 
         setTags(id3Tags);
       }
@@ -138,9 +121,18 @@ const TestScreen: React.FC = () => {
       {tags && (
         <ScrollView style={styles.tagsContainer}>
           <Text style={styles.sectionTitle}>ID3 Tags</Text>
-          {Object.entries(tags).map(([key, value]) =>
-            renderTagItem(key, value)
+          
+          {/* Display album artwork at the top if available */}
+          {tags.image && (
+            <View style={styles.albumArtContainer}>
+              <AlbumArtwork imageData={tags.image} size={250} />
+            </View>
           )}
+          
+          {/* Display all other tags */}
+          {Object.entries(tags)
+            .filter(([key]) => key !== 'image') // Skip the image tag as it's already displayed
+            .map(([key, value]) => renderTagItem(key, value))}
         </ScrollView>
       )}
 
@@ -245,6 +237,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#757575",
     textAlign: "center",
+  },
+  albumArtContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
 });
 

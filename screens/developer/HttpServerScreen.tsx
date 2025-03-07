@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Button, ScrollView, TextInput, Switch } from 'r
 import * as FileSystem from 'expo-file-system';
 import * as Network from 'expo-network';
 import { Asset } from 'expo-asset';
-import { createServer } from '../utils/http';
+import { createServer } from '../../utils/http';
 import { Buffer } from 'buffer';
 
 export default function HttpServerScreen2(): JSX.Element {
@@ -38,10 +38,6 @@ export default function HttpServerScreen2(): JSX.Element {
     };
   }, []);
 
-  useEffect(() => {
-    startServer();
-  }, []);
-
   const loadAssets = async (): Promise<void> => {
     try {
       addLog('Loading assets...');
@@ -51,7 +47,7 @@ export default function HttpServerScreen2(): JSX.Element {
       
       if (htmlAsset.localUri) {
         addLog(`HTML asset loaded: ${htmlAsset.localUri}`);
-        
+
         // Create the html directory in document directory if it doesn't exist
         const dirPath = `${FileSystem.documentDirectory}html`;
         const dirInfo = await FileSystem.getInfoAsync(dirPath);
