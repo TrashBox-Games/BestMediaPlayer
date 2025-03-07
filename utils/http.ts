@@ -1,6 +1,8 @@
 import TcpSocket from 'react-native-tcp-socket';
 import { Buffer } from 'buffer';
 import { EventEmitter } from 'events';
+import { HTTPParser } from './http-parser';
+import * as FileSystem from 'expo-file-system';
 
 // HTTP status codes
 const STATUS_CODES: Record<number, string> = {
@@ -35,13 +37,12 @@ interface File {
   data: Buffer;
 }
 
-
 // Request object
 interface Request {
   method: HttpMethod;
   url: string;
   headers: Record<string, string>;
-  body: string | Buffer;
+  body: string | Buffer | Record<string, any>;
   params: Record<string, string>;
   query: Record<string, string>;
   files: File[];
@@ -69,6 +70,288 @@ interface Route {
   handler: RouteHandler;
 }
 
+// Parse HTTP request using HTTPParser
+function parseRequest(input: Buffer): any {
+  const parser = new HTTPParser(HTTPParser.REQUEST);
+  let complete = false;
+  let shouldKeepAlive;
+  let upgrade;
+  let method;
+  let url;
+  let versionMajor;
+  let versionMinor;
+  let headers: string[] = [];
+  let trailers: string[] = [];
+  let bodyChunks: Buffer[] = [];
+
+  parser[HTTPParser.kOnHeadersComplete] = function (req) {
+    shouldKeepAlive = req.shouldKeepAlive;
+    upgrade = req.upgrade;
+    method = HTTPParser.methods[req.method];
+    url = req.url;
+    versionMajor = req.versionMajor;
+    versionMinor = req.versionMinor;
+    headers = req.headers;
+  };
+
+  parser[HTTPParser.kOnBody] = function (chunk, offset, length) {
+    bodyChunks.push(chunk.slice(offset, offset + length));
+  };
+
+  parser[HTTPParser.kOnHeaders] = function (t) {
+    trailers = t;
+  };
+
+  parser[HTTPParser.kOnMessageComplete] = function () {
+    complete = true;
+  };
+
+  parser.execute(input);
+  parser.finish();
+
+  if (!complete) {
+    throw new Error('Could not parse request');
+  }
+
+  let body = Buffer.concat(bodyChunks);
+
+  return {
+    shouldKeepAlive,
+    upgrade,
+    method,
+    url,
+    versionMajor,
+    versionMinor,
+    headers,
+    body,
+    trailers,
+  };
+}
+
+// Parse HTTP response using HTTPParser
+function parseResponse(input: Buffer): any {
+  const parser = new HTTPParser(HTTPParser.RESPONSE);
+  let complete = false;
+  let shouldKeepAlive;
+  let upgrade;
+  let statusCode;
+  let statusMessage;
+  let versionMajor;
+  let versionMinor;
+  let headers: string[] = [];
+  let trailers: string[] = [];
+  let bodyChunks: Buffer[] = [];
+
+  parser[HTTPParser.kOnHeadersComplete] = function (res) {
+    shouldKeepAlive = res.shouldKeepAlive;
+    upgrade = res.upgrade;
+    statusCode = res.statusCode;
+    statusMessage = res.statusMessage;
+    versionMajor = res.versionMajor;
+    versionMinor = res.versionMinor;
+    headers = res.headers;
+  };
+
+  parser[HTTPParser.kOnBody] = function (chunk, offset, length) {
+    bodyChunks.push(chunk.slice(offset, offset + length));
+  };
+
+  parser[HTTPParser.kOnHeaders] = function (t) {
+    trailers = t;
+  };
+
+  parser[HTTPParser.kOnMessageComplete] = function () {
+    complete = true;
+  };
+
+  parser.execute(input);
+  parser.finish();
+
+  if (!complete) {
+    throw new Error('Could not parse response');
+  }
+
+  let body = Buffer.concat(bodyChunks);
+
+  return {
+    shouldKeepAlive,
+    upgrade,
+    statusCode,
+    statusMessage,
+    versionMajor,
+    versionMinor,
+    headers,
+    body,
+    trailers,
+  };
+}
+
+// Convert array of headers to a Record object
+function headersArrayToObject(headers: string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (let i = 0; i < headers.length; i += 2) {
+    const key = headers[i].toLowerCase();
+    const value = headers[i + 1];
+    result[key] = value;
+  }
+  return result;
+}
+
+// Parse URL query parameters
+function parseQueryParams(url: string): Record<string, string> {
+  const queryParams: Record<string, string> = {};
+  const queryString = url.split('?')[1];
+  
+  if (queryString) {
+    const pairs = queryString.split('&');
+    for (const pair of pairs) {
+      const [key, value] = pair.split('=');
+      if (key) {
+        queryParams[decodeURIComponent(key)] = value ? decodeURIComponent(value) : '';
+      }
+    }
+  }
+  
+  return queryParams;
+}
+
+// Parse multipart/form-data content
+async function parseMultipartFormData(body: Buffer, contentType: string): Promise<{ fields: Record<string, string>, files: File[] }> {
+  const boundary = contentType.split('boundary=')[1]?.trim();
+  if (!boundary) {
+    throw new Error('No boundary found in multipart/form-data content type');
+  }
+
+  const boundaryBuffer = Buffer.from(`--${boundary}`);
+  const endBoundaryBuffer = Buffer.from(`--${boundary}--`);
+  const crlfBuffer = Buffer.from('\r\n');
+  const doubleCrlfBuffer = Buffer.from('\r\n\r\n');
+
+  const parts: Buffer[] = [];
+  let start = 0;
+  let end = 0;
+
+  // Find the first boundary
+  start = body.indexOf(boundaryBuffer, 0);
+  if (start === -1) {
+    throw new Error('Invalid multipart/form-data: no boundary found');
+  }
+
+  // Skip the first boundary
+  start += boundaryBuffer.length;
+
+  // Find subsequent boundaries and extract parts
+  while (start < body.length) {
+    // Skip CRLF after boundary
+    if (body.slice(start, start + 2).toString() === '\r\n') {
+      start += 2;
+    }
+
+    // Find the next boundary
+    end = body.indexOf(boundaryBuffer, start);
+    if (end === -1) {
+      // Check for end boundary
+      end = body.indexOf(endBoundaryBuffer, start);
+      if (end === -1) {
+        // If no end boundary, use the end of the buffer
+        end = body.length;
+      }
+    }
+
+    // Extract the part (headers + body)
+    const part = body.slice(start, end - 2); // -2 to remove trailing CRLF
+    if (part.length > 0) {
+      parts.push(part);
+    }
+
+    // Move to the next part
+    start = end + boundaryBuffer.length;
+  }
+
+  // Process each part
+  const fields: Record<string, string> = {};
+  const files: File[] = [];
+
+  for (const part of parts) {
+    // Find the separator between headers and content
+    const headerEndIndex = part.indexOf(doubleCrlfBuffer);
+    if (headerEndIndex === -1) continue;
+
+    // Extract and parse headers
+    const headersBuffer = part.slice(0, headerEndIndex);
+    const headersText = headersBuffer.toString();
+    const headers: Record<string, string> = {};
+
+    headersText.split('\r\n').forEach(line => {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex > 0) {
+        const key = line.slice(0, colonIndex).trim().toLowerCase();
+        const value = line.slice(colonIndex + 1).trim();
+        headers[key] = value;
+      }
+    });
+
+    // Extract content
+    const content = part.slice(headerEndIndex + doubleCrlfBuffer.length);
+
+    // Check if this part is a file
+    const contentDisposition = headers['content-disposition'] || '';
+    const nameMatch = contentDisposition.match(/name="([^"]+)"/);
+    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+    
+    const name = nameMatch ? nameMatch[1] : '';
+    
+    if (filenameMatch && name) {
+      // This is a file
+      const filename = filenameMatch[1];
+      const contentType = headers['content-type'] || 'application/octet-stream';
+      
+      files.push({
+        name: filename,
+        type: contentType,
+        size: content.length,
+        data: content
+      });
+    } else if (name) {
+      // This is a regular field
+      fields[name] = content.toString();
+    }
+  }
+
+  return { fields, files };
+}
+
+// Save uploaded file to temporary directory
+async function saveUploadedFile(file: File): Promise<string> {
+  try {
+    // Create a temporary directory if it doesn't exist
+    const tempDir = FileSystem.cacheDirectory + 'uploads/';
+    const dirInfo = await FileSystem.getInfoAsync(tempDir);
+    
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true });
+    }
+    
+    // Generate a unique filename
+    const timestamp = new Date().getTime();
+    const randomString = Math.random().toString(36).substring(2, 10);
+    const safeFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const tempFilePath = `${tempDir}${timestamp}_${randomString}_${safeFilename}`;
+    
+    // Write the file data
+    await FileSystem.writeAsStringAsync(
+      tempFilePath,
+      file.data.toString('base64'),
+      { encoding: FileSystem.EncodingType.Base64 }
+    );
+    
+    return tempFilePath;
+  } catch (error) {
+    console.error('Error saving uploaded file:', error);
+    throw new Error('Failed to save uploaded file');
+  }
+}
+
 // HTTP Server class
 class HttpServer extends EventEmitter {
   private routes: Route[] = [];
@@ -79,73 +362,78 @@ class HttpServer extends EventEmitter {
   // Add a maximum buffer size to prevent memory issues
   private readonly MAX_BUFFER_SIZE = 50 * 1024 * 1024; // 50MB limit
 
-  constructor() {
+  // Improved route matching with method-based indexing for faster lookups
+  private routesByMethod: Record<HttpMethod, Route[]> = {
+    'GET': [],
+    'POST': [],
+    'PUT': [],
+    'DELETE': [],
+    'PATCH': [],
+    'OPTIONS': [],
+    'HEAD': []
+  };
+
+  constructor(options: { debug?: boolean } = {}) {
     super();
+    this.debug = options.debug !== undefined ? options.debug : false;
   }
 
   private log(...args: any[]) {
     if (this.debug) {
-      console.log(...args);
+      console.log('[HttpServer]', ...args);
     }
   }
 
-  // Register route handlers for different HTTP methods
+  // Register route handlers for different HTTP methods with improved indexing
   get(path: string, handler: RouteHandler) {
     this.routes.push({ method: 'GET', path, handler });
+    this.routesByMethod['GET'].push({ method: 'GET', path, handler });
     return this;
   }
 
   post(path: string, handler: RouteHandler) {
     this.routes.push({ method: 'POST', path, handler });
+    this.routesByMethod['POST'].push({ method: 'POST', path, handler });
     return this;
   }
 
   put(path: string, handler: RouteHandler) {
     this.routes.push({ method: 'PUT', path, handler });
+    this.routesByMethod['PUT'].push({ method: 'PUT', path, handler });
     return this;
   }
 
   delete(path: string, handler: RouteHandler) {
     this.routes.push({ method: 'DELETE', path, handler });
+    this.routesByMethod['DELETE'].push({ method: 'DELETE', path, handler });
+    return this;
+  }
+
+  patch(path: string, handler: RouteHandler) {
+    this.routes.push({ method: 'PATCH', path, handler });
+    this.routesByMethod['PATCH'].push({ method: 'PATCH', path, handler });
+    return this;
+  }
+
+  options(path: string, handler: RouteHandler) {
+    this.routes.push({ method: 'OPTIONS', path, handler });
+    this.routesByMethod['OPTIONS'].push({ method: 'OPTIONS', path, handler });
+    return this;
+  }
+
+  head(path: string, handler: RouteHandler) {
+    this.routes.push({ method: 'HEAD', path, handler });
+    this.routesByMethod['HEAD'].push({ method: 'HEAD', path, handler });
     return this;
   }
 
   // Optimize buffer concatenation
   private appendToBuffer(existing: Buffer, chunk: Buffer): Buffer {
-    // Pre-allocate a buffer of the right size to avoid multiple allocations
-    const newBuffer = Buffer.alloc(existing.length + chunk.length);
-    existing.copy(newBuffer, 0);
-    chunk.copy(newBuffer, existing.length);
-    return newBuffer;
+    return Buffer.concat([existing, chunk]);
   }
 
   private findInBuffer(buffer: Buffer, search: Buffer, start: number = 0): number {
-    // For small buffers, use the built-in indexOf
-    if (buffer.length < 10000) {
-      return buffer.indexOf(search, start);
-    }
-    
-    // For large buffers, use a more efficient search algorithm
-    // This is a simplified example - you might want a more sophisticated approach
-    const searchLength = search.length;
-    const maxIndex = buffer.length - searchLength;
-    
-    for (let i = start; i <= maxIndex; i += searchLength) {
-      // First check just the first byte as a quick filter
-      if (buffer[i] === search[0]) {
-        // If first byte matches, check the whole sequence
-        let matches = true;
-        for (let j = 1; j < searchLength; j++) {
-          if (buffer[i + j] !== search[j]) {
-            matches = false;
-            break;
-          }
-        }
-        if (matches) return i;
-      }
-    }
-    
-    return -1;
+    return buffer.indexOf(search, start);
   }
 
   private splitBuffer(buffer: Buffer, delimiter: Buffer): Buffer[] {
@@ -166,151 +454,6 @@ class HttpServer extends EventEmitter {
     return parts;
   }
 
-  private joinBuffer(buffer: Buffer[], delimiter: Buffer): Buffer {
-    let joinedBuffer = Buffer.from('');
-    for (let i = 0; i < buffer.length; i++) {
-      joinedBuffer = Buffer.concat([joinedBuffer, buffer[i]]);
-      if (i < buffer.length - 1) {
-        joinedBuffer = Buffer.concat([joinedBuffer, delimiter]);
-      }
-    }
-
-    return joinedBuffer;
-  }
-
-  private parseBufferRequest(data: Buffer): Request | null {
-    const lines = this.splitBuffer(data, Buffer.from('\r\n'));
-    const [methodLine, ...headerLines] = lines;
-
-    if (!methodLine) return null;
-    
-    const [method, url] = methodLine.toString().split(' ');
-
-    if (!method || !url) return null;
-
-    const headers: Record<string, string> = {};
-    let bodyStartIndex = 0;
-
-    for (let i = 0; i < headerLines.length; i++) {
-      const line = headerLines[i];
-      if (line.toString().trim() === '') {
-        bodyStartIndex = i + 1;
-        break;
-      }
-
-      const [key, value] = line.toString().split(': ');
-      if (key && value) {
-        headers[key.toString().toLowerCase()] = value.toString();
-      }
-    }
-
-    const body = this.joinBuffer(headerLines.slice(bodyStartIndex), Buffer.from('\r\n'));
-
-    // let files: Record<string, any> = {};
-    // if (headers['content-type'] && headers['content-type'].includes('multipart/form-data') && body) {
-    //   const dataParts = this.parseBufferRequestBody(body);
-    //   if (dataParts) {
-    //     files = this.filesFromDataParts(dataParts);
-    //   }
-    // }
-
-    const [path, queryString] = (url || '').split('?');
-    const query: Record<string, string> = {};
-
-    if (queryString) {
-      queryString.split('&').forEach(param => {
-        const [key, value] = param.split('=');
-        if (key) {
-          query[key] = value || '';
-        }
-      });
-    }
-
-    const params: Record<string, string> = {};
-
-    return {
-      method: method as HttpMethod,
-      url,
-      headers,
-      body,
-      params,
-      query,
-      files: []
-    };
-  }
-
-  private parseBufferRequestBody(body: Buffer, dataParts: DataParts): DataParts | null {
-    // Split the body by \r\n to separate the lines
-    const lines = this.splitBuffer(body, Buffer.from('\r\n'));
-    
-    let boundary = '';
-    dataParts = dataParts || {};
-    for (let i = 0; i < lines.length; i++) {
-      // this.log("LINE: ", lines[i].toString());
-      if (lines[i].toString().includes('------WebKitFormBoundary')) {
-        if (!boundary) {
-          boundary = lines[i].toString().split('------WebKitFormBoundary')[1].trim();
-          dataParts[boundary] = {
-            'Content-Disposition': '',
-            'Content-Type': '',
-            'Content-Length': '',
-            'Data': Buffer.from('')
-          };
-        }
-      } else {
-        if (lines[i].toString().includes('Content-Disposition: form-data')) {
-          dataParts[boundary]['Content-Disposition'] = lines[i].toString().split('Content-Disposition: ')[1];
-        }
-        else if (lines[i].toString().includes('Content-Type:')) {
-          dataParts[boundary]['Content-Type'] = lines[i].toString().split('Content-Type: ')[1];
-        }
-        else if (lines[i].toString().includes('Content-Length:')) {
-          dataParts[boundary]['Content-Length'] = lines[i].toString().split('Content-Length: ')[1];
-        }
-        else {
-          if (dataParts[boundary]['Data']) {
-            dataParts[boundary]['Data'] = Buffer.concat([dataParts[boundary]['Data'], lines[i]]);
-          }
-          else {
-            dataParts[boundary]['Data'] = lines[i];
-          }
-        }
-      }
-    }
-
-    this.log("BOUNDARY: ", boundary);
-
-    return dataParts;
-  }
-
-  private filesFromDataParts(dataParts: DataParts): File[] {
-    const files: File[] = [];
-    for (let i in dataParts) {
-      this.log(dataParts[i]['Content-Disposition']);
-      this.log(dataParts[i]['Content-Type']);
-      this.log(dataParts[i]['Data'].length);
-      const file: File = {
-        name: '',
-        type: '',
-        size: 0,
-        data: Buffer.from('')
-      };
-      const contentDisposition = dataParts[i]['Content-Disposition'] || '';
-      const contentType = dataParts[i]['Content-Type'] || '';
-      const data = dataParts[i]['Data'] || Buffer.from('');
-      const nameMatch = contentDisposition.match(/name="([^"]+)"/);
-      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-      if (nameMatch && filenameMatch) {
-        file.name = filenameMatch[1];
-        file.type = contentType;
-        file.size = data.length || 0;
-        file.data = data;
-      }
-      files.push(file);
-    }
-    return files;
-  }
-
   private getMimeType(filename: string): string {
     const ext = filename.split('.').pop()?.toLowerCase() || '';
     const mimeTypes: Record<string, string> = {
@@ -324,18 +467,81 @@ class HttpServer extends EventEmitter {
       'gif': 'image/gif',
       'mp3': 'audio/mpeg',
       'mp4': 'video/mp4',
-      // Add more as needed
+      'webm': 'video/webm',
+      'txt': 'text/plain',
+      'pdf': 'application/pdf',
+      'svg': 'image/svg+xml',
+      'xml': 'application/xml',
+      'zip': 'application/zip',
+      'ico': 'image/x-icon',
+      'woff': 'font/woff',
+      'woff2': 'font/woff2',
+      'ttf': 'font/ttf',
+      'otf': 'font/otf',
     };
     
     return mimeTypes[ext] || 'application/octet-stream';
   }
 
-  // Match route
+  // Extract path parameters from URL
+  private extractPathParams(routePath: string, requestPath: string): Record<string, string> | null {
+    const routeParts = routePath.split('/');
+    const requestParts = requestPath.split('/');
+    
+    if (routeParts.length !== requestParts.length) {
+      return null;
+    }
+    
+    const params: Record<string, string> = {};
+    
+    for (let i = 0; i < routeParts.length; i++) {
+      const routePart = routeParts[i];
+      const requestPart = requestParts[i];
+      
+      // Check if this part is a parameter (starts with :)
+      if (routePart.startsWith(':')) {
+        const paramName = routePart.substring(1);
+        params[paramName] = requestPart;
+      } else if (routePart !== requestPart) {
+        // If parts don't match and it's not a parameter, no match
+        return null;
+      }
+    }
+    
+    return params;
+  }
+
+  // Optimized route matching with path parameter support
   private matchRoute(req: Request): Route | null {
-    return this.routes.find(route => 
-      route.method === req.method && 
-      (route.path === req.url || route.path === req.url.split('?')[0])
-    ) || null;
+    // First check if we have routes for this method
+    const methodRoutes = this.routesByMethod[req.method as HttpMethod];
+    if (!methodRoutes || methodRoutes.length === 0) {
+      return null;
+    }
+    
+    // Get the path without query parameters
+    const path = req.url.split('?')[0];
+    
+    // Look for an exact match first (most common case)
+    for (const route of methodRoutes) {
+      if (route.path === path) {
+        return route;
+      }
+    }
+    
+    // If no exact match, check for path parameters
+    for (const route of methodRoutes) {
+      if (route.path.includes(':')) {
+        const params = this.extractPathParams(route.path, path);
+        if (params) {
+          // Store the extracted parameters in the request object
+          req.params = params;
+          return route;
+        }
+      }
+    }
+    
+    return null;
   }
 
   // Create response object
@@ -508,340 +714,180 @@ class HttpServer extends EventEmitter {
     return res;
   }
 
-  // Add a new method for streaming multipart form data
-  private streamMultipartFormData(req: Request, socket: any, callback: (req: Request) => void): void {
-    if (!req.headers['content-type']?.includes('multipart/form-data')) {
-      callback(req);
-      return;
-    }
-
-    // Extract boundary from content-type header
-    this.log("CONTENT TYPE: ", req.headers['content-type']);
-    const boundaryMatch = req.headers['content-type'].match(/boundary=(?:"([^"]+)"|([^;]+))/i);
-    if (!boundaryMatch) {
-      this.log("NO BOUNDARY MATCH");
-      callback(req);
-      return;
-    }
-    
-    const boundary = `${boundaryMatch[1] || boundaryMatch[2]}`;
-    const endBoundary = `${boundary}--`;
-
-    this.log("BOUNDARY: ", boundary);
-    this.log("END BOUNDARY: ", endBoundary);
-    
-    // Initialize state for streaming parser
-    const files: File[] = [];
-    let currentFile: {
-      headers: Record<string, string>;
-      name: string;
-      type: string;
-      data: Buffer[];
-      size: number;
-    } | null = null;
-    
-    let buffer = Buffer.from([]);
-    let state: 'boundary' | 'headers' | 'content' = 'boundary';
-    let headerText = '';
-    
-    // Function to process a chunk of data
-    const processChunk = (chunk: Buffer): void => {
-      this.log("PROCESSING CHUNK");
-      buffer = Buffer.concat([buffer, chunk]);
+  // Process HTTP request with streaming support
+  private async handleRequest(socket: any, data: Buffer) {
+    try {
+      // Parse the HTTP request
+      const parsedRequest = parseRequest(data);
       
-      // Process buffer until we can't make progress
-      let madeProgress = true;
-      while (madeProgress) {
-        madeProgress = false;
-        
-        if (state === 'boundary') {
-          this.log("BUFFER IN BOUNDARY STATE: ", buffer.length);
-          const boundaryIndex = buffer.indexOf(Buffer.from(boundary));
-          if (boundaryIndex !== -1) {
-            // Found a boundary, move past it
-            buffer = buffer.slice(boundaryIndex + boundary.length);
-            state = 'headers';
-            headerText = '';
-            madeProgress = true;
-          }
-        } else if (state === 'headers') {
-          const headersEndIndex = buffer.indexOf(Buffer.from('\r\n\r\n'));
-          if (headersEndIndex !== -1) {
-            // Extract headers
-            headerText += buffer.slice(0, headersEndIndex).toString();
-            buffer = buffer.slice(headersEndIndex + 4); // +4 for \r\n\r\n
-            
-            // Parse headers
-            const headers: Record<string, string> = {};
-            headerText.split('\r\n').forEach(line => {
-              const colonIndex = line.indexOf(':');
-              if (colonIndex !== -1) {
-                const key = line.slice(0, colonIndex).trim().toLowerCase();
-                const value = line.slice(colonIndex + 1).trim();
-                headers[key] = value;
-              }
-            });
-            
-            // Check if this is a file part
-            const contentDisposition = headers['content-disposition'] || '';
-            const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-            const nameMatch = contentDisposition.match(/name="([^"]+)"/);
-
-            this.log("FILENAME MATCH: ", filenameMatch[1]);
-            this.log("NAME MATCH: ", nameMatch[1]); 
-            this.log("CONTENT DISPOSITION: ", contentDisposition);
-            this.log("CONTENT TYPE: ", headers['content-type']);
-            
-            if (filenameMatch && nameMatch) {
-              // This is a file part
-              currentFile = {
-                headers,
-                name: filenameMatch[1],
-                type: headers['content-type'] || '',
-                data: [],
-                size: 0
-              };
-            } else {
-              // Not a file part, skip
-              currentFile = null;
-            }
-            
-            state = 'content';
-            this.log("STATE: ", state);
-            madeProgress = true;
-          }
-        } else if (state === 'content') {
-          // Look for the next boundary
-          this.log("IN THE CONTENT STATE");
+      // Convert headers array to object
+      const headerObj = headersArrayToObject(parsedRequest.headers);
+      
+      // Parse query parameters
+      const queryParams = parseQueryParams(parsedRequest.url);
+      
+      // Create request object
+      const req: Request = {
+        method: parsedRequest.method as HttpMethod,
+        url: parsedRequest.url,
+        headers: headerObj,
+        body: parsedRequest.body,
+        params: {},
+        query: queryParams,
+        files: [], // Will be populated if multipart/form-data
+      };
+      
+      // Handle file uploads if content-type is multipart/form-data
+      const contentType = headerObj['content-type'] || '';
+      if (contentType.includes('multipart/form-data') && parsedRequest.body.length > 0) {
+        try {
+          const { fields, files } = await parseMultipartFormData(parsedRequest.body, contentType);
           
-          // Try different boundary formats
-          const possibleBoundaries = [
-            `\r\n--${boundary}`, // Standard format with CRLF
-            `\n--${boundary}`,   // LF only
-            `--${boundary}`,     // No line ending
-            `\r\n${boundary}`,   // Your current format
-            `\n${boundary}`      // Alternative format
-          ];
+          // Add form fields to body as an object
+          req.body = fields;
           
-          let boundaryIndex = -1;
-          let matchedBoundary = '';
+          // Add files to the request
+          req.files = files;
           
-          // Try each possible boundary format
-          for (const possibleBoundary of possibleBoundaries) {
-            const index = buffer.indexOf(Buffer.from(possibleBoundary));
-            if (index !== -1) {
-              boundaryIndex = index;
-              matchedBoundary = possibleBoundary;
-              break;
+          // Optionally save files to temporary storage
+          for (let i = 0; i < req.files.length; i++) {
+            try {
+              const tempPath = await saveUploadedFile(req.files[i]);
+              // Add the temporary path to the file object
+              (req.files[i] as any).path = tempPath;
+            } catch (error) {
+              this.log('Error saving uploaded file:', error);
             }
           }
-          
-          this.log("BOUNDARY INDEX: ", boundaryIndex);
-          if (boundaryIndex !== -1) {
-            this.log("MATCHED BOUNDARY: ", matchedBoundary);
-          }
-          
-          // Also check for end boundary
-          const possibleEndBoundaries = [
-            `\r\n--${boundary}--`, // Standard format with CRLF
-            `\n--${boundary}--`,   // LF only
-            `--${boundary}--`,     // No line ending
-            `\r\n${boundary}--`,   // Your current format
-            `\n${boundary}--`      // Alternative format
-          ];
-          
-          let endBoundaryIndex = -1;
-          let matchedEndBoundary = '';
-          
-          // Try each possible end boundary format
-          for (const possibleEndBoundary of possibleEndBoundaries) {
-            const index = buffer.indexOf(Buffer.from(possibleEndBoundary));
-            if (index !== -1) {
-              endBoundaryIndex = index;
-              matchedEndBoundary = possibleEndBoundary;
-              break;
-            }
-          }
-          
-          this.log("END BOUNDARY INDEX: ", endBoundaryIndex);
-          if (endBoundaryIndex !== -1) {
-            this.log("MATCHED END BOUNDARY: ", matchedEndBoundary);
-          }
-          
-          // Process the content based on boundary detection
-          if (boundaryIndex !== -1 || endBoundaryIndex !== -1) {
-            // We found the end of this part
-            const endIndex = (endBoundaryIndex !== -1) ? endBoundaryIndex : boundaryIndex;
-            
-            if (currentFile) {
-              // Add the content to the current file
-              const content = buffer.slice(0, endIndex);
-              currentFile.data.push(content);
-              currentFile.size += content.length;
-              
-              this.log("ADDING FILE: ", currentFile.name, " SIZE: ", currentFile.size);
-              
-              // Create a file object and add it to files
-              files.push({
-                name: currentFile.name,
-                type: currentFile.type,
-                size: currentFile.size,
-                data: Buffer.concat(currentFile.data)
-              });
-            }
-            
-            // Move past this boundary
-            if (endBoundaryIndex !== -1) {
-              // We're done processing
-              this.log("FOUND END BOUNDARY");
-              this.log("FILES COUNT: ", files.length);
-              req.files = files;
-              callback(req);
-              return;
-            } else {
-              // Move to next part
-              buffer = buffer.slice(endIndex + matchedBoundary.length);
-              state = 'headers';
-              headerText = '';
-              madeProgress = true;
-            }
-          } else if (buffer.length > 1024 * 1024) { // 1MB chunk size
-            // Buffer is getting large, process a chunk
-            if (currentFile) {
-              // Keep the last 200 bytes in case they contain part of the boundary
-              const safeLength = Math.max(0, buffer.length - 200);
-              const chunk = buffer.slice(0, safeLength);
-              currentFile.data.push(chunk);
-              currentFile.size += chunk.length;
-              buffer = buffer.slice(safeLength);
-              this.log("PROCESSED CHUNK FOR FILE: ", currentFile.name, " TOTAL SIZE: ", currentFile.size);
-            } else {
-              // Not a file part, discard
-              buffer = buffer.slice(buffer.length);
-            }
-            madeProgress = true;
-          }
+        } catch (error) {
+          this.log('Error parsing multipart/form-data:', error);
         }
+      } else if (contentType.includes('application/json') && typeof req.body !== 'string') {
+        // Parse JSON body
+        try {
+          req.body = JSON.parse(req.body.toString());
+        } catch (error) {
+          this.log('Error parsing JSON body:', error);
+        }
+      } else if (contentType.includes('application/x-www-form-urlencoded') && typeof req.body !== 'string') {
+        // Parse URL-encoded form data
+        const bodyStr = req.body.toString();
+        const formData: Record<string, string> = {};
+        
+        bodyStr.split('&').forEach(pair => {
+          const [key, value] = pair.split('=');
+          if (key) {
+            formData[decodeURIComponent(key)] = value ? decodeURIComponent(value) : '';
+          }
+        });
+        
+        req.body = formData;
       }
-    };
-    
-    // Set up data handler for socket
-    socket.on('data', (chunk: Buffer) => {
-      try {
-        this.log("IN SOCKET DATA");
-        processChunk(chunk);
-      } catch (error) {
-        this.log('Error processing multipart data:', error);
-        req.files = files; // Use what we've got so far
-        callback(req);
+      
+      // Create response object
+      const res = this.createResponse(socket);
+      
+      // Find matching route
+      const route = this.matchRoute(req);
+      
+      if (route) {
+        // Execute route handler
+        try {
+          route.handler(req, res);
+        } catch (error) {
+          this.log('Error in route handler:', error);
+          res.status(500).send('Internal Server Error');
+        }
+      } else {
+        // No matching route found
+        res.status(404).send('Not Found');
       }
-    });
-    
-    // Handle end of data
-    socket.on('end', () => {
-      req.files = files;
-      callback(req);
-    });
+    } catch (error) {
+      this.log('Error handling request:', error);
+      // Send a basic 400 response
+      const errorResponse = `HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Request`;
+      socket.write(errorResponse);
+      socket.end();
+    }
   }
 
-  // Start the server
+  // Start the server with streaming support
   listen(port: number, callback?: () => void) {
     this.port = port;
     
-    this.server = TcpSocket.createServer((socket) => {
+    this.server = TcpSocket.createServer((socket: any) => {
+      // Set a reasonable timeout
       socket.setTimeout(30000); // 30 seconds timeout
-
+      
+      let buffer = Buffer.alloc(0);
+      let headersParsed = false;
+      let contentLength = 0;
+      let bytesRead = 0;
+      
       socket.on('timeout', () => {
-        this.log('Socket timeout');
         socket.end();
       });
-
-      let buffer = Buffer.from([])
-      let body = Buffer.from([])
-      let req: Request | null = null;
-      let dataParts: DataParts = {};
-      let contentLength = 0;
       
-      socket.on('data', (chunk: string | Buffer) => {
-        this.log("IN SOCKET DATA 2");
-        const chunkBuffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      socket.on('data', (chunk: Buffer) => {
+        // Append the new chunk to our buffer
+        buffer = Buffer.concat([buffer, chunk]);
+        bytesRead += chunk.length;
         
-        // Check buffer size before appending
-        if (buffer.length + chunkBuffer.length > this.MAX_BUFFER_SIZE) {
-          socket.write('HTTP/1.1 413 Payload Too Large\r\n\r\n');
+        // Check if we've exceeded the maximum buffer size
+        if (bytesRead > this.MAX_BUFFER_SIZE) {
+          this.log('Request too large, closing connection');
+          socket.write('HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n');
           socket.end();
           return;
         }
         
-        this.log("BUFFER IN SOCKET DATA 2: ", buffer.length);
-        buffer = this.appendToBuffer(buffer, chunkBuffer);
-
-        // If we haven't parsed the request yet
-        if (!req && buffer.includes(Buffer.from('\r\n\r\n'))) {
-          req = this.parseBufferRequest(buffer);
-          
-          if (!req) {
-            socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-            socket.end();
-            return;
-          }
-          
-          // Check if this is a multipart form data request
-          if (req.headers['content-type']?.includes('multipart/form-data')) {
-            // Handle streaming for multipart form data
-            this.streamMultipartFormData(req, socket, (updatedReq) => {
-              // This callback is called when streaming is complete
-              const res = this.createResponse(socket);
-              const route = this.matchRoute(updatedReq);
-              
-              if (route) {
-                try {
-                  route.handler(updatedReq, res);
-                } catch (error) {
-                  this.log('Error handling request:', error);
-                  res.status(500).send('Internal Server Error');
-                }
-              } else {
-                res.status(404).send('Not Found');
-              }
-            });
+        // If headers aren't parsed yet, try to parse them
+        if (!headersParsed) {
+          const headersEnd = buffer.indexOf(Buffer.from('\r\n\r\n'));
+          if (headersEnd !== -1) {
+            // Headers are complete, check for Content-Length
+            const headersStr = buffer.slice(0, headersEnd).toString();
+            const contentLengthMatch = headersStr.match(/content-length:\s*(\d+)/i);
             
-            // Reset buffer since we're now handling streaming
-            buffer = Buffer.from([]);
-          } else {
-            // For non-multipart requests, handle normally
-            const res = this.createResponse(socket);
-            const route = this.matchRoute(req);
-            
-            if (route) {
-              try {
-                route.handler(req, res);
-              } catch (error) {
-                this.log('Error handling request:', error);
-                res.status(500).send('Internal Server Error');
-              }
-            } else {
-              res.status(404).send('Not Found');
+            if (contentLengthMatch) {
+              contentLength = parseInt(contentLengthMatch[1], 10);
             }
             
-            // Reset for next request
-            buffer = Buffer.from([]);
-            req = null;
+            headersParsed = true;
+            
+            // If no content expected or we already have all the content, process the request
+            if (contentLength === 0 || buffer.length >= headersEnd + 4 + contentLength) {
+              this.handleRequest(socket, buffer);
+              buffer = Buffer.alloc(0); // Clear buffer after processing
+            }
+          }
+        } else {
+          // Headers already parsed, check if we have the full body
+          const headersEnd = buffer.indexOf(Buffer.from('\r\n\r\n'));
+          if (buffer.length >= headersEnd + 4 + contentLength) {
+            this.handleRequest(socket, buffer);
+            buffer = Buffer.alloc(0); // Clear buffer after processing
           }
         }
       });
-
-      socket.on('close', () => {
-        this.log('Socket closed');
-      });
       
-      socket.on('error', (error) => {
+      socket.on('error', (error: Error) => {
         this.log('Socket error:', error);
         this.emit('error', error);
       });
+      
+      socket.on('close', () => {
+        buffer = Buffer.alloc(0); // Clear buffer on close
+      });
+    });
+    
+    this.server.on('error', (error: Error) => {
+      this.log('Server error:', error);
+      this.emit('error', error);
     });
     
     this.server.listen({ port, host: '0.0.0.0' }, () => {
+      this.log(`HTTP server listening on port ${port}`);
       if (callback) callback();
     });
     
@@ -852,6 +898,7 @@ class HttpServer extends EventEmitter {
   close(callback?: () => void) {
     if (this.server) {
       this.server.close(() => {
+        this.log('HTTP server closed');
         if (callback) callback();
       });
     }
@@ -861,6 +908,6 @@ class HttpServer extends EventEmitter {
 }
 
 // Create server function (similar to Express)
-export function createServer(): HttpServer {
-  return new HttpServer();
+export function createServer(options: { debug?: boolean } = {}): HttpServer {
+  return new HttpServer(options);
 }
