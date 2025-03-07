@@ -4,7 +4,6 @@ import SongsTab from "../components/tabs/SongsTab";
 import AlbumsTab from "../components/tabs/AlbumsTab";
 import GenresTab from "../components/tabs/GenresTab";
 import PlaylistsTab from "../components/tabs/PlaylistsTab";
-import SettingsTab from "../components/tabs/SettingsTab";
 
 // Create the top tab navigator
 type TopTabParamList = {
@@ -28,11 +27,10 @@ export default function AudioScreen(): JSX.Element {
         tabBarLabelStyle: { fontWeight: "bold" },
       }}
     >
-      <TopTab.Screen name="Songs" component={SongsTab} />
-      <TopTab.Screen name="Albums" component={AlbumsTab} />
-      <TopTab.Screen name="Genres" component={GenresTab} />
-      <TopTab.Screen name="Playlists" component={PlaylistsTab} />
-      <TopTab.Screen name="Settings" component={SettingsTab} />
+      <TopTab.Screen name="Songs" component={SongsTab} key="Songs" />
+      <TopTab.Screen name="Albums" component={AlbumsTab} key="Albums" />
+      <TopTab.Screen name="Genres" component={GenresTab} key="Genres" />
+      <TopTab.Screen name="Playlists" component={PlaylistsTab} key="Playlists" />
     </TopTab.Navigator>
   );
 }
