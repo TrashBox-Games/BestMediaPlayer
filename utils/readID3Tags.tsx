@@ -318,7 +318,7 @@ function decodeImageFrame(buffer: Buffer): string | undefined {
     const imageData = buffer.slice(descEnd);
 
     // Convert to base64
-    return imageData.toString("base64");
+    return "data:" + mimeType + ";base64," + imageData.toString("base64");
   } catch (error) {
     console.error("Error decoding image frame:", error);
     return undefined;
@@ -351,7 +351,7 @@ export const pickAudioFile =
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: "audio/*",
-        copyToCacheDirectory: true,
+        copyToCacheDirectory: false,
       });
 
       if (result.canceled) {
