@@ -10,7 +10,6 @@ import PlaylistsScreen from "./screens/PlaylistsScreen";
 import VideoScreen from "./screens/VideoScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AudioScreen from "./screens/AudioScreen";
-import HttpServerScreen from "./screens/developer/HttpServerScreen";
 import AddFileScreen from "./screens/AddFileScreen";
 // Import context provider
 import { TagsProvider } from "./contexts/TagsContext";
