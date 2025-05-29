@@ -9,7 +9,8 @@ import * as FileSystem from "expo-file-system";
 import * as DocumentPicker from "expo-document-picker";
 import { readID3v2Tags } from "../utils/readID3Tags";
 import { Platform } from "react-native";
-
+import { syncDatabaseWithFileSystem } from "../db/utils";
+import { useSQLiteContext } from "expo-sqlite";
 // Create a context
 const TagsContext = createContext<TagsContextType | undefined>(undefined);
 
@@ -33,6 +34,7 @@ export interface AudioFile {
   size: number;
   modificationTime: number;
   tags?: TagInfo;
+  id?: number;
 }
 
 interface TagsContextType {
@@ -68,6 +70,7 @@ export const TagsProvider: React.FC<TagsProviderProps> = ({ children }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<AudioFile | null>(null);
   const [tagInfo, setTagInfo] = useState<TagInfo | null>(null);
+  const db = useSQLiteContext();
 
   useEffect(() => {
     scanForAudioFiles();
@@ -109,8 +112,10 @@ export const TagsProvider: React.FC<TagsProviderProps> = ({ children }) => {
       const newAudioFiles = await Promise.all(audioFilesPromises);
       setAudioFiles(newAudioFiles);
 
+      const pureMedia = await syncDatabaseWithFileSystem(db, newAudioFiles);
+
       // Load basic metadata for each file
-      await loadMetadata(newAudioFiles);
+      await loadMetadata(pureMedia);
 
       setLoading(false);
     } catch (error) {
