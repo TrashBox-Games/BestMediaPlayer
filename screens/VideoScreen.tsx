@@ -1,16 +1,16 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import SearchBar from "../components/SearchBar";
+import SearchBarHeader from "../components/SearchBarHeader";
 
 export default function VideoScreen(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   return (
     <View style={styles.container}>
-      <SearchBar
+      <SearchBarHeader
         placeholder="Search videos..."
-        value={searchQuery}
-        onChangeText={setSearchQuery}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
       <View style={styles.contentContainer}>
         <Text style={styles.text}>Video Player Screen</Text>

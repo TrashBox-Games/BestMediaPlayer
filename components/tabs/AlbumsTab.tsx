@@ -1,16 +1,16 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import SearchBar from "../SearchBar";
+import SearchBarHeader from "../SearchBarHeader";
 
 export default function AlbumsTab(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   return (
     <View style={styles.tabContainer}>
-      <SearchBar
+      <SearchBarHeader
         placeholder="Search albums..."
-        value={searchQuery}
-        onChangeText={setSearchQuery}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
       <View style={styles.contentContainer}>
         <Text style={styles.text}>Albums List</Text>

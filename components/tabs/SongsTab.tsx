@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -14,19 +14,17 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import AlbumArtwork from "../AlbumArtwork";
 import SongItem from "../SongItem";
+import SearchBarAndButton from "../SearchBarHeaderWithButton";
 import { useTagsContext, AudioFile } from "../../contexts/TagsContext";
 import { usePlayerContext } from "../../contexts/PlayerContext";
 import Slider from "@react-native-community/slider";
 
-const SongsTab = () => {
+const SongsTab = memo(function SongsTab() {
   const {
     audioFiles,
     loading,
     refreshing,
-    selectedFile,
-    tagInfo,
     scanForAudioFiles,
-    selectFile,
     setRefreshing,
     pickAudioFile,
   } = useTagsContext();
@@ -102,7 +100,6 @@ const SongsTab = () => {
 
   // Handle file selection and playback
   const handleFileSelect = async (file: AudioFile) => {
-    selectFile(file);
     playTrack(file);
   };
 
@@ -125,37 +122,19 @@ const SongsTab = () => {
         isSelected={isSelected}
         isPlaying={playerState.isPlaying}
         onSelect={handleFileSelect}
-        defaultImage={require('../../assets/default-album.png')}
+        defaultImage={require("../../assets/default-album.png")}
       />
     );
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.searchContainer}>
-          <Ionicons
-            name="search"
-            size={20}
-            color="#888"
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search songs..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#888" />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-        <TouchableOpacity style={styles.addButton} onPress={pickAudioFile}>
-          <Ionicons name="add" size={24} color="white" />
-        </TouchableOpacity>
-      </View>
+      <SearchBarAndButton
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onAddPress={pickAudioFile}
+        placeholder="Search songs..."
+      />
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -232,11 +211,11 @@ const SongsTab = () => {
           </View>
 
           <View style={styles.trackInfoContainer}>
-              <AlbumArtwork
-                imageData={currentTrack.tags?.image}
-                style={styles.playerAlbumArt}
-                defaultImage={require('../../assets/default-album.png')}
-              />
+            <AlbumArtwork
+              imageData={currentTrack.tags?.image}
+              style={styles.playerAlbumArt}
+              defaultImage={require("../../assets/default-album.png")}
+            />
 
             <View style={styles.trackTextContainer}>
               <Text style={styles.trackTitle} numberOfLines={1}>
@@ -251,45 +230,12 @@ const SongsTab = () => {
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f8f8f8",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    backgroundColor: "white",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  searchContainer: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f0f0f0",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    marginRight: 10,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    height: 40,
-    fontSize: 16,
-  },
-  addButton: {
-    backgroundColor: "#007AFF",
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
   },
   scrollView: {
     flex: 1,

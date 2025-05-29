@@ -1,18 +1,28 @@
-import React, { memo } from "react";
+import React from "react";
 import AlbumArtwork from "./AlbumArtwork";
-import { View, Text, StyleSheet, TouchableOpacity, ImageSourcePropType } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ImageSourcePropType,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { AudioFile } from "../contexts/TagsContext";
 
-interface SongItemProps {
+interface SelectableSongItemProps {
   item: AudioFile;
   isSelected: boolean;
-  isPlaying: boolean;
   onSelect: (file: AudioFile) => void;
   defaultImage: ImageSourcePropType;
 }
 
-const SongItem = memo(({ item, isSelected, isPlaying, onSelect, defaultImage }: SongItemProps) => {
+const SelectableSongItem = ({
+  item,
+  isSelected,
+  onSelect,
+  defaultImage,
+}: SelectableSongItemProps) => {
   return (
     <TouchableOpacity
       style={[styles.fileItem, isSelected ? styles.selectedItem : null]}
@@ -20,8 +30,8 @@ const SongItem = memo(({ item, isSelected, isPlaying, onSelect, defaultImage }: 
     >
       <View style={styles.fileInfo}>
         <View style={styles.artworkContainer}>
-          <AlbumArtwork 
-            imageData={item.tags?.image} 
+          <AlbumArtwork
+            imageData={item.tags?.image}
             style={styles.albumArt}
             defaultImage={defaultImage}
           />
@@ -37,13 +47,17 @@ const SongItem = memo(({ item, isSelected, isPlaying, onSelect, defaultImage }: 
             {item.tags?.album || "Unknown Album"}
           </Text>
         </View>
-        {isSelected && isPlaying && (
-          <Ionicons name="volume-high" size={20} color="#007AFF" />
-        )}
+        <View style={styles.checkboxContainer}>
+          {isSelected ? (
+            <Ionicons name="checkbox" size={24} color="#007AFF" />
+          ) : (
+            <Ionicons name="square-outline" size={24} color="#999" />
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
-});
+};
 
 const styles = StyleSheet.create({
   fileItem: {
@@ -60,8 +74,6 @@ const styles = StyleSheet.create({
   },
   selectedItem: {
     backgroundColor: "#e6f2ff",
-    borderColor: "#007AFF",
-    borderWidth: 1,
   },
   fileInfo: {
     flexDirection: "row",
@@ -94,6 +106,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#888",
   },
+  checkboxContainer: {
+    marginLeft: 10,
+    justifyContent: "center",
+  },
 });
 
-export default SongItem;
+export default SelectableSongItem;

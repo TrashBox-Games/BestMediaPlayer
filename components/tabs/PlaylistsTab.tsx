@@ -1,15 +1,42 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, StyleSheet, FlatList } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSQLiteContext } from "expo-sqlite";
+import SearchBarHeaderWithButton from "../SearchBarHeaderWithButton";
+import {
+  getAllPlaylists,
+  Playlist,
+  getPlaylistsAndItems,
+} from "../../db/queries";
+import AlbumArtwork from "../AlbumArtwork";
 
 const PlaylistsTab = () => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const db = useSQLiteContext();
+  const [playlists, setPlaylists] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchPlaylists = async () => {
+      const data = await getPlaylistsAndItems(db);
+      console.log(data.playlists[0].cover?.slice(0, 100));
+      setPlaylists(data.playlists);
+    };
+    
+    fetchPlaylists();
+  }, [db]);
+
   return (
     <View style={styles.container}>
-      <View style={styles.emptyContainer}>
-        <Ionicons name="list" size={64} color="#ccc" />
-        <Text style={styles.emptyText}>No Playlists Yet</Text>
-        <Text style={styles.emptySubtext}>Playlists feature coming soon!</Text>
-      </View>
+      <SearchBarHeaderWithButton
+        placeholder="Search playlists..."
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onAddPress={() => {}}
+      />
+      <FlatList
+        data={playlists}
+        renderItem={({ item }) => <AlbumArtwork imageData={item.cover} style={styles.albumArt} defaultImage={require("../../assets/default-album.png")}/>}
+      />
     </View>
   );
 };
@@ -35,6 +62,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#888",
     marginTop: 8,
+  },
+  albumArt: {
+    width: 50,
+    height: 50,
+    borderRadius: 4,
   },
 });
 

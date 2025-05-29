@@ -1,16 +1,15 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import SearchBar from "../components/SearchBar";
-
+import SearchBarHeader from "../components/SearchBarHeader";
 export default function PlaylistsScreen(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   return (
     <View style={styles.container}>
-      <SearchBar
+      <SearchBarHeader
         placeholder="Search playlists..."
-        value={searchQuery}
-        onChangeText={setSearchQuery}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
       <View style={styles.contentContainer}>
         <Text style={styles.text}>Playlists Screen</Text>
