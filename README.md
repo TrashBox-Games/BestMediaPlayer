@@ -47,48 +47,31 @@ A modern React Native media player application with optimized ID3 tag extraction
 2. Install dependencies:
 
    ```
-   npm install
+   pnpm install
    ```
 
 3. Start the development server:
    ```
-   npx expo start
+   pnpm start
    ```
 
-## Dependencies
+4. Run the app:
+   ```
+   ## Android
+   pnpm run android
 
-- React Native
-- Expo
-- @react-native-async-storage/async-storage
-- @react-native-community/slider
-- expo-av
-- expo-file-system
-- expo-media-library
-- buffer
+   ## iOS
+   pnpm run ios
 
-## Project Structure
+   ## Web
+   pnpm run web
+   ```
 
-```
-media-player/
-├── components/
-│   ├── tabs/
-│   │   ├── SongsTab.tsx
-│   │   ├── PlaylistsTab.tsx
-│   │   └── SettingsTab.tsx
-├── contexts/
-│   ├── TagsContext.tsx
-│   └── PlayerContext.tsx
-├── utils/
-│   └── id3TagUtils.ts
-├── App.tsx
-└── package.json
-```
+## Common Issues
 
-## License
+### iOS
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- Thanks to the React Native and Expo communities for their excellent documentation and support.
-- ID3 tag extraction algorithms inspired by various open-source projects and research papers on efficient binary data processing.
+- If you encounter issues with the iOS build, try the following:
+  - Ensure you have Xcode installed and the latest version
+  - Try opening Xcode before running the app
+  - Try opening the simulator before running the app
